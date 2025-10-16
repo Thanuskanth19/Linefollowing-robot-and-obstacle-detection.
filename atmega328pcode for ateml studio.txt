@@ -1,0 +1,245 @@
+#define F_CPU 16000000UL
+#include <avr/io.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+/* ========= Pin Map ========= */
+// Motor PWM (L298/TB6612 enables)
+#define EN_RIGHT    PD6   // OC0A (D6)
+#define EN_LEFT     PD5   // OC0B (D5)
+// Motor directions
+#define RIGHT1      PD7   // D7
+#define RIGHT2      PB0   // D8
+#define LEFT1       PB1   // D9
+#define LEFT2       PB2   // D10
+// IR sensors (active LOW on black)
+#define IR_RIGHT    PB3   // D11
+#define IR_LEFT     PB4   // D12
+// Ultrasonic
+#define TRIG_PIN    PD3   // D3
+#define ECHO_PIN    PD2   // D2 / INT0
+#define OBSTACLE_STOP_CM    10   // stop if <= 10 cm
+
+// LEDs + Button
+#define LED_GREEN   PD4   // D4  -> Mode 1 indicator
+#define LED_BLUE    PB5   // D13 -> Mode 2 indicator
+#define LED_RED     PC5   // A5  -> Obstacle blink
+#define BTN_MODE    PC3   // A3  -> to GND, pull-up ON
+
+/* ========= Tunables ========= */
+#define OBSTACLE_STOP_CM    18      // stop if <= this distance in Mode 2
+#define FWD_SPEED           90
+#define TURN_SPEED          80
+
+/* ========= Globals ========= */
+static volatile uint8_t  mode = 1;           // 1 = line follow, 2 = line+ultrasonic
+static volatile uint16_t echo_ticks = 0;     // Timer1 ticks captured (0.5 us per tick)
+static volatile uint8_t  echo_ready = 0;     // set when a new echo_ticks is available
+static volatile uint16_t distance_cm = 999;  // last computed distance (cm)
+
+/* ========= Utilities ========= */
+static inline uint8_t uabs8(int v){ return (v < 0) ? (uint8_t)(-v) : (uint8_t)v; }
+
+static inline void rotateMotor(int rightSpeed, int leftSpeed) {
+    // Direction
+    if (rightSpeed > 0) { PORTD |=  (1 << RIGHT1); PORTB &= ~(1 << RIGHT2); }
+    else if (rightSpeed < 0) { PORTD &= ~(1 << RIGHT1); PORTB |=  (1 << RIGHT2); }
+    else { PORTD &= ~(1 << RIGHT1); PORTB &= ~(1 << RIGHT2); }
+
+    if (leftSpeed > 0) { PORTB |=  (1 << LEFT1); PORTB &= ~(1 << LEFT2); }
+    else if (leftSpeed < 0) { PORTB &= ~(1 << LEFT1); PORTB |=  (1 << LEFT2); }
+    else { PORTB &= ~(1 << LEFT1); PORTB &= ~(1 << LEFT2); }
+
+    OCR0A = uabs8(rightSpeed);
+    OCR0B = uabs8(leftSpeed);
+}
+
+/* ========= Init Blocks ========= */
+static inline void initPWM(void) {
+    DDRD |= (1 << EN_LEFT) | (1 << EN_RIGHT);
+    // Fast PWM on Timer0, non-inverting, prescaler = 8 (~7.8 kHz)
+    TCCR0A = (1 << COM0A1) | (1 << COM0B1) | (1 << WGM01) | (1 << WGM00);
+    TCCR0B = (1 << CS01);
+}
+
+static inline void initMotorPins(void) {
+    DDRD |= (1 << RIGHT1);
+    DDRB |= (1 << RIGHT2) | (1 << LEFT1) | (1 << LEFT2);
+}
+
+static inline void initIR(void) {
+    DDRB &= ~((1 << IR_RIGHT) | (1 << IR_LEFT));       // inputs
+    PORTB |=  (1 << IR_RIGHT) | (1 << IR_LEFT);        // pull-ups
+    PCICR = 0; PCMSK0 = 0;                             // no pin-change ints
+}
+
+static inline void initIO(void){
+    // LEDs
+    DDRD |= (1 << LED_GREEN);
+    DDRB |= (1 << LED_BLUE);
+    DDRC |= (1 << LED_RED);
+    // Button (pull-up)
+    DDRC &= ~(1 << BTN_MODE);
+    PORTC |=  (1 << BTN_MODE);
+}
+
+static inline void setModeLEDs(void){
+    if (mode == 1) { PORTD |= (1 << LED_GREEN); PORTB &= ~(1 << LED_BLUE); }
+    else           { PORTD &= ~(1 << LED_GREEN); PORTB |=  (1 << LED_BLUE); }
+}
+
+/* Timer2 = 1 kHz control loop */
+static inline void initControlTimer(void) {
+    // F_CPU=16 MHz, prescaler 64 → 250 kHz tick; OCR2A=249 → 1 kHz
+    TCCR2A = (1 << WGM21);          // CTC
+    TCCR2B = (1 << CS22);           // prescaler 64
+    OCR2A  = 249;
+    TIMSK2 = (1 << OCIE2A);         // enable compare A interrupt
+}
+
+/* Ultrasonic: Timer1 + INT0 edge timing
+   Timer1: prescaler=8 → 2 MHz → 0.5 us per tick
+*/
+static inline void initUltrasonic(void){
+    // TRIG as output LOW, ECHO as input
+    DDRD  |=  (1 << TRIG_PIN);
+    PORTD &= ~(1 << TRIG_PIN);
+    DDRD  &= ~(1 << ECHO_PIN);     // input
+
+    // Timer1: free-running, prescaler=8
+    TCCR1A = 0;
+    TCCR1B = (1 << CS11);          // clk/8
+
+    // INT0 on rising edge initially
+    EICRA = (1 << ISC01) | (1 << ISC00);
+    EIFR  = (1 << INTF0);          // clear pending
+    EIMSK = (1 << INT0);           // enable INT0
+}
+
+static inline void int0_set_rising(void){ EICRA |=  (1 << ISC01) | (1 << ISC00); }
+static inline void int0_set_falling(void){ EICRA = (EICRA | (1 << ISC01)) & ~(1 << ISC00); }
+
+/* ========= Interrupts ========= */
+// INT0: measure echo pulse width
+ISR(INT0_vect){
+    static uint8_t waiting_for_rise = 1;
+    if (waiting_for_rise){
+        TCNT1 = 0;                // start timing
+        int0_set_falling();       // next: falling edge
+        waiting_for_rise = 0;
+    }else{
+        echo_ticks = TCNT1;       // capture width
+        echo_ready = 1;
+        int0_set_rising();        // arm for next cycle
+        waiting_for_rise = 1;
+    }
+}
+
+// 1 kHz control loop: line following + obstacle stop + RED blink in Mode 2
+ISR(TIMER2_COMPA_vect) {
+    static uint16_t red_div = 0;     // divider for red LED blink (~250 ms)
+
+    // Read IR (active LOW on black)
+    uint8_t pb = PINB;
+    uint8_t right_black = ((pb & (1 << IR_RIGHT)) == 0);
+    uint8_t left_black  = ((pb & (1 << IR_LEFT))  == 0);
+
+    // Obstacle condition (only relevant in Mode 2)
+    uint8_t obstacle = (mode == 2 && distance_cm <= OBSTACLE_STOP_CM);
+
+    // Handle RED LED blink when obstacle in Mode 2
+    if (obstacle) {
+        if (++red_div >= 10) {        // 250 ms at 1 kHz
+            PORTC ^= (1 << LED_RED);   // toggle RED
+            red_div = 0;
+        }
+    } else {
+        PORTC &= ~(1 << LED_RED);       // RED OFF
+        red_div = 0;
+    }
+
+    // Motor behavior
+    if (obstacle) {
+        // Stop on obstacle (change to creep if you want)
+        rotateMotor(0, 0);
+        return;
+    }
+
+    // Line-follow decision table
+    if (!left_black && !right_black) {
+        rotateMotor(0, 0);                             // no line seen
+    } else if (left_black && !right_black) {
+        rotateMotor(-TURN_SPEED, TURN_SPEED);          // turn left
+    } else if (!left_black && right_black) {
+        rotateMotor(TURN_SPEED, -TURN_SPEED);          // turn right
+    } else {
+        rotateMotor(FWD_SPEED, FWD_SPEED);             // both on line -> forward
+    }
+}
+
+/* ========= Main ========= */
+int main(void) {
+    initPWM();
+    initMotorPins();
+    initIR();
+    initIO();
+    initControlTimer();
+    initUltrasonic();
+    setModeLEDs();
+    sei();
+
+    rotateMotor(0, 0);   // stop initially
+
+    /* Cooperative tasks in main:
+       - Debounce Mode button and toggle mode
+       - Ping ultrasonic about every 60 ms
+       - Convert echo_ticks -> cm when ready
+    */
+    uint8_t  btn_deb = 0;     // debounce counter
+    uint8_t  btn_latched = 0; // ensures single toggle per press
+    uint8_t  tick5ms = 0;     // 5 ms tick to build ~60 ms
+
+    for(;;){
+        /* --- Button debounce & mode toggle --- */
+        uint8_t pressed = ((PINC & (1 << BTN_MODE)) == 0); // low when pressed
+        if (pressed){
+            if (btn_deb < 10) btn_deb++;       // ~50 ms stable press
+            else if (!btn_latched){
+                mode = (mode == 1) ? 2 : 1;    // toggle
+                setModeLEDs();
+                btn_latched = 1;
+            }
+        }else{
+            btn_deb = 0;
+            btn_latched = 0;
+        }
+
+        /* --- Ultrasonic trigger every ~60 ms --- */
+        if (++tick5ms >= 12){   // 12 * 5ms = 60ms
+            tick5ms = 0;
+            // 10 us TRIG pulse
+            PORTD |=  (1 << TRIG_PIN);
+            _delay_us(12);
+            PORTD &= ~(1 << TRIG_PIN);
+        }
+
+                   
+                    if (echo_ready){
+	                    uint16_t t = echo_ticks;      // Timer1 ticks, 0.5 us each
+	                    echo_ready = 0;
+	                    // HC-SR04: 58 us ≈ 1 cm → 10 ticks per cm
+	                    uint16_t cm = t / 10;
+
+	                    if (cm == 0) cm = 10;        
+	                    if (cm < 10) cm = 10;       
+
+	                    distance_cm = cm;
+                    }
+
+
+
+        _delay_ms(5); // loop granularity; ISR keeps motors responsive
+    }
+}
