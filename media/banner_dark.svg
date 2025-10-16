@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="400" viewBox="0 0 1200 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Line Follower + Obstacle Stop — ATmega328P • L298N • HC-SR04 (dark)">
+  <defs>
+    <linearGradient id="bgDark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#0b1a16"/>
+    </linearGradient>
+    <linearGradient id="accentDark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#28C895"/>
+      <stop offset="100%" stop-color="#12a57e"/>
+    </linearGradient>
+    <filter id="softShadowDark" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1200" height="400" fill="url(#bgDark)" rx="24"/>
+
+  <!-- Faint line track -->
+  <path d="M80,340 C200,290 200,110 320,160 S520,310 640,260 880,120 1040,200" 
+        fill="none" stroke="#d1d5db" stroke-opacity="0.08" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- Accent track with marker -->
+  <path d="M80,320 C200,270 200,130 320,180 S520,290 640,240 880,140 1040,220" 
+        fill="none" stroke="url(#accentDark)" stroke-width="10" stroke-linecap="round" filter="url(#softShadowDark)"/>
+  <circle cx="640" cy="240" r="12" fill="#28C895" filter="url(#softShadowDark)"/>
+
+  <!-- Title & subtitle block -->
+  <g transform="translate(120,110)">
+    <rect x="-20" y="-40" width="720" height="220" fill="#0f172a" opacity="0.7" rx="20"/>
+    <text x="20" y="40" font-family="Inter, Segoe UI, Roboto, Arial, sans-serif" font-size="48" font-weight="700" fill="#e5e7eb">
+      Line Follower + Obstacle Stop
+    </text>
+    <text x="20" y="92" font-family="Inter, Segoe UI, Roboto, Arial, sans-serif" font-size="22" fill="#cbd5e1">
+      ATmega328P • L298N • HC-SR04 • Dual IR Sensors • 2×18650
+    </text>
+    <rect x="20" y="120" rx="12" ry="12" width="400" height="40" fill="url(#accentDark)"/>
+    <text x="40" y="146" font-family="Inter, Segoe UI, Roboto, Arial, sans-serif" font-size="18" font-weight="600" fill="#0b1220">
+      Non‑blocking 200 Hz control • Differential PWM
+    </text>
+  </g>
+
+  <!-- Badge -->
+  <g transform="translate(960,40)">
+    <rect x="0" y="0" width="210" height="44" rx="12" fill="#22d3ee" opacity="0.12"/>
+    <text x="16" y="28" font-family="Inter, Segoe UI, Roboto, Arial, sans-serif" font-size="18" font-weight="600" fill="#22d3ee">
+      Open‑Source (MIT)
+    </text>
+  </g>
+</svg>
