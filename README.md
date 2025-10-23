@@ -1,3 +1,9 @@
+
+# University of colombo faculty of technology 
+# Microcontroler  
+# LineFollowing & Obstacle detection Car 
+
+
 <p align="center">
   <img src="Assets/Image (2).jpg" alt="Line Follower + Obstacle Stop — ATmega328P • L298N • HC-SR04" width="50%">
 </p>
@@ -35,6 +41,11 @@ Low-cost two-wheel robot that follows a black line using two IR reflectance sens
 - LEDs + Mode Button → any spare pins (button with pull-up)
 
 > See `hardware/wiring.md` for the exact pin map you used.
+
+<p align="center">
+  <img src="Circuitdiagram/circuitdiagram.png" alt="Circuitdiagram" width="50%">
+</p>
+
 
 ## Firmware
 - Language: C (AVR-GCC) / Arduino-compatible
