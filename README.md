@@ -1,14 +1,15 @@
 <p align="center">
-  <img src="Assets/Image (2).jpg" alt="Line Follower + Obstacle Stop — ATmega328P • L298N • HC-SR04" width="100%">
+  <img src="Assets/Image (2).jpg" alt="Line Follower + Obstacle Stop — ATmega328P • L298N • HC-SR04" width="50%">
 </p>
 
 
 
 # Line Follower + Obstacle Stop (ATmega328P)
 
-Low-cost two-wheel robot that follows a black line using two IR reflectance sensors and stops when an HC-SR04 ultrasonic sensor detects an obstacle within a set distance. Built around ATmega328P, L298N (or TB6612FNG) motor driver, and 18650 battery pack.
+Low-cost two-wheel robot that follows a black line using two IR reflectance sensors and stops when an HC-SR04 ultrasonic sensor detects an obstacle within a set distance. Built around ATmega328P, L298N  motor driver, and 18650 battery pack.
 
-https://github.com/Thanuskanth19/Linefollowing-robot-and-obstacle-detection./blob/main/Linefollowing%20live%20link.mp4
+<video src="https://github.com/Thanuskanth19/Linefollowing-robot-and-obstacle-detection./blob/main/Assets/Linefollowing%20live%20link.mp4" controls width="720"></video>
+
 
 ## Features
 - Two modes: **Line Follow** and **Line + Obstacle Stop** (toggle via button)
