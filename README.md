@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/banner.svg" alt="Line Follower + Obstacle Stop — ATmega328P • L298N • HC-SR04" width="100%">
+  <img src="Assets/Image (2).jpg" alt="Line Follower + Obstacle Stop — ATmega328P • L298N • HC-SR04" width="100%">
 </p>
 
 
