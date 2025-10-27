@@ -1,3 +1,6 @@
+<p align="center">
+  <img src="media/banner_dark.svg" alt="Line Follower + Obstacle Stop — ATmega328P • L298N • HC-SR04" width="50%">
+</p>
 
 # University of colombo faculty of technology 
 # Microcontroler  
